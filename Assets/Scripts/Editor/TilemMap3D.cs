@@ -12,7 +12,7 @@ namespace Editor
 
 
         [MenuItem("Map/创建网格")]
-        private static void CreateDamageMeshSlot()
+        private static void Create()
         {
             // var path = Path.Combine(Application.dataPath, "DamageMesh.asset");
             var path = $"Assets/TileMap3D.asset";
