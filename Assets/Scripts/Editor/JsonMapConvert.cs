@@ -198,41 +198,27 @@ namespace Editor
 
         private static void CreateMesh()
         {
-            CreateSurfaceMesh();
-            CreateWallMesh();
-        }
-
-        private static void CreateSurfaceMesh()
-        {
-            var path = $"Assets/RTSMap.asset";
             var mesh = new Mesh();
-            var SIZE = tileVoDic.Count;
-            int vertCount = SIZE * 4;
-            int triCount = SIZE * 6;
-            var vertices = new Vector3[vertCount];
-            var triangles = new int[triCount];
-            var uvs = new Vector2[vertCount];
-            var index = 0; //第几个格子
+            var vertList = new List<Vector3>();
+            var triList = new List<int>();
+            var uvList = new List<Vector2>();
+            var vertDic = new Dictionary<string, int>(); // key: "x_z_y" -> vertIndex
+
+            // 生成表面
             foreach (var tileVo in tileVoDic.Values)
             {
                 var layerIndex1 = GetDrawLayerIndex(tileVo.x, tileVo.z, tileVo.layerIndex);
                 var layerIndex2 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z, tileVo.layerIndex);
                 var layerIndex3 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z - 1, tileVo.layerIndex);
                 var layerIndex4 = GetDrawLayerIndex(tileVo.x, tileVo.z - 1, tileVo.layerIndex);
-                var v1 = PtToMap(tileVo.x, tileVo.z, layerIndex1 * LAYER_HEIGHT);
-                var v2 = PtToMap(tileVo.x - 1, tileVo.z, layerIndex2 * LAYER_HEIGHT);
-                var v3 = PtToMap(tileVo.x - 1, tileVo.z - 1, layerIndex3 * LAYER_HEIGHT);
-                var v4 = PtToMap(tileVo.x, tileVo.z - 1, layerIndex4 * LAYER_HEIGHT);
-                vertices[index * 4] = v1;
-                vertices[index * 4 + 1] = v2;
-                vertices[index * 4 + 2] = v3;
-                vertices[index * 4 + 3] = v4;
-                uvs[index * 4] = new Vector2(0, 0);
-                uvs[index * 4 + 1] = new Vector2(1, 0);
-                uvs[index * 4 + 2] = new Vector2(1, 1);
-                uvs[index * 4 + 3] = new Vector2(0, 1);
 
-                // 检查当前格子是否需要斜面（有相邻格子高度低于当前格子）
+                // 获取或创建4个顶点
+                int v0 = GetOrCreateVertex(tileVo.x, tileVo.z, layerIndex1, vertList, vertDic);
+                int v1 = GetOrCreateVertex(tileVo.x - 1, tileVo.z, layerIndex2, vertList, vertDic);
+                int v2 = GetOrCreateVertex(tileVo.x - 1, tileVo.z - 1, layerIndex3, vertList, vertDic);
+                int v3 = GetOrCreateVertex(tileVo.x, tileVo.z - 1, layerIndex4, vertList, vertDic);
+
+                // 斜面判断
                 bool needsSlope = false;
                 if (tileVoDic.TryGetValue((tileVo.x - 1) + "_" + tileVo.z, out var leftTileVo))
                 {
@@ -248,63 +234,27 @@ namespace Editor
 
                 if (needsSlope)
                 {
-                    // 斜面：两个三角形沿对角线 1-2 分割
-                    triangles[index * 6] = index * 4;
-                    triangles[index * 6 + 1] = index * 4 + 1;
-                    triangles[index * 6 + 2] = index * 4 + 2;
-                    triangles[index * 6 + 3] = index * 4;
-                    triangles[index * 6 + 4] = index * 4 + 2;
-                    triangles[index * 6 + 5] = index * 4 + 3;
+                    // 斜面
+                    triList.Add(v0);
+                    triList.Add(v1);
+                    triList.Add(v2);
+                    triList.Add(v0);
+                    triList.Add(v2);
+                    triList.Add(v3);
                 }
                 else
                 {
-                    // 平面：两个三角形沿对角线 0-2 分割
-                    triangles[index * 6] = index * 4;
-                    triangles[index * 6 + 1] = index * 4 + 1;
-                    triangles[index * 6 + 2] = index * 4 + 3;
-                    triangles[index * 6 + 3] = index * 4 + 1;
-                    triangles[index * 6 + 4] = index * 4 + 2;
-                    triangles[index * 6 + 5] = index * 4 + 3;
+                    // 平面
+                    triList.Add(v0);
+                    triList.Add(v1);
+                    triList.Add(v3);
+                    triList.Add(v1);
+                    triList.Add(v2);
+                    triList.Add(v3);
                 }
-
-                index++;
             }
 
-            mesh.vertices = vertices;
-            mesh.triangles = triangles;
-            mesh.uv = uvs;
-            mesh.RecalculateBounds();
-            mesh.RecalculateNormals();
-
-            var so = new SerializedObject(mesh);
-            var pro = so.FindProperty("m_IsReadable");
-            pro.boolValue = false;
-            so.ApplyModifiedProperties();
-            AssetDatabase.CreateAsset(mesh, path);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            var oldGo = GameObject.Find("RTSMap");
-            if (oldGo != null)
-            {
-                Object.DestroyImmediate(oldGo);
-            }
-
-            var go = new GameObject("RTSMap");
-            var filter = go.AddComponent<MeshFilter>();
-            filter.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
-            var render = go.AddComponent<MeshRenderer>();
-            render.sharedMaterial = new Material(Shader.Find("Standard"));
-        }
-
-        private static void CreateWallMesh()
-        {
-            var path = $"Assets/RTSMap_Wall.asset";
-            var mesh = new Mesh();
-            var wallList = new List<Vector3>();
-            var wallTriangles = new List<int>();
-            var wallUvs = new List<Vector2>();
-
+            // 生成墙面
             foreach (var tileVo in tileVoDic.Values)
             {
                 // 左侧墙面 
@@ -315,7 +265,8 @@ namespace Editor
                         continue; //这是右上侧的墙面
                     }
 
-                    CreateWallIfNeeded(tileVo, leftTileVo, true, ref wallList, ref wallUvs, ref wallTriangles);
+                    if (leftTileVo.layerIndex < tileVo.layerIndex)
+                        AddWallTriangles(tileVo, leftTileVo, true, vertList, vertDic, triList);
                 }
 
                 // 右侧墙面 
@@ -326,15 +277,20 @@ namespace Editor
                         continue; //这是左上侧的墙面
                     }
 
-                    CreateWallIfNeeded(tileVo, rightTileVo, false, ref wallList, ref wallUvs, ref wallTriangles);
+                    if (rightTileVo.layerIndex < tileVo.layerIndex)
+                        AddWallTriangles(tileVo, rightTileVo, false, vertList, vertDic, triList);
                 }
             }
 
-            if (wallList.Count == 0) return;
+            // 填充UV
+            for (int i = 0; i < vertList.Count; i++)
+            {
+                uvList.Add(new Vector2(0, 0));
+            }
 
-            mesh.vertices = wallList.ToArray();
-            mesh.triangles = wallTriangles.ToArray();
-            mesh.uv = wallUvs.ToArray();
+            mesh.vertices = vertList.ToArray();
+            mesh.triangles = triList.ToArray();
+            mesh.uv = uvList.ToArray();
             mesh.RecalculateBounds();
             mesh.RecalculateNormals();
 
@@ -342,68 +298,82 @@ namespace Editor
             var pro = so.FindProperty("m_IsReadable");
             pro.boolValue = false;
             so.ApplyModifiedProperties();
+
+            var path = $"Assets/RTSMap_Combined.asset";
             AssetDatabase.CreateAsset(mesh, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            var oldGo = GameObject.Find("RTSMap_Wall");
-            if (oldGo != null)
-            {
-                Object.DestroyImmediate(oldGo);
-            }
+            var oldGo = GameObject.Find("RTSMap_Combined");
+            if (oldGo != null) Object.DestroyImmediate(oldGo);
 
-            var go = new GameObject("RTSMap_Wall");
+            var go = new GameObject("RTSMap_Combined");
             var filter = go.AddComponent<MeshFilter>();
             filter.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             var render = go.AddComponent<MeshRenderer>();
             render.sharedMaterial = new Material(Shader.Find("Standard"));
         }
 
-        private static void CreateWallIfNeeded(TileVo vo1, TileVo vo2, bool isLeft, ref List<Vector3> vertices,
-            ref List<Vector2> uvs, ref List<int> triangles)
+        private static int GetOrCreateVertex(int tx, int tz, int layerIndex, List<Vector3> vertList,
+            Dictionary<string, int> vertDic)
+        {
+            var key = $"{tx}_{tz}_{layerIndex:F2}";
+            if (vertDic.TryGetValue(key, out var index))
+                return index;
+
+            var pos = PtToMap(tx, tz, layerIndex * LAYER_HEIGHT);
+            vertList.Add(pos);
+            vertDic[key] = vertList.Count - 1;
+            return vertList.Count - 1;
+        }
+
+        private static void AddWallTriangles(TileVo vo1, TileVo vo2, bool isLeft,
+            List<Vector3> vertList, Dictionary<string, int> vertDic, List<int> triList)
         {
             var indexGap = Mathf.Abs(vo1.layerIndex - vo2.layerIndex);
-            if (indexGap < 2)
-            {
-                return;
-            }
+            if (indexGap < 2) return;
 
             var topTileVo = vo1.layerIndex > vo2.layerIndex ? vo1 : vo2;
             var bottomTileVo = vo1.layerIndex < vo2.layerIndex ? vo1 : vo2;
 
-            //左墙面
-            var v1 = PtToMap(topTileVo.x, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
-            var v2 = PtToMap(topTileVo.x - 1, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
-            var v3 = PtToMap(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
-            var v4 = PtToMap(topTileVo.x, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
-            //右墙面
-            if (isLeft == false)
+            int v0, v1, v2, v3;
+
+            if (isLeft)
             {
-                v1 = PtToMap(topTileVo.x, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
-                v2 = PtToMap(topTileVo.x, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
-                v3 = PtToMap(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex * LAYER_HEIGHT);
-                v4 = PtToMap(topTileVo.x, topTileVo.z - 1, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
+                v0 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
+                v1 = GetOrCreateVertex(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
+                v2 = GetOrCreateVertex(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
+                v3 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
+            }
+            else
+            {
+                v0 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
+                v1 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
+                v2 = GetOrCreateVertex(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex, vertList, vertDic);
+                v3 = GetOrCreateVertex(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex - indexGap, vertList, vertDic);
             }
 
-            var index = vertices.Count / 4; //第几个格子
-            vertices.Add(v1);
-            vertices.Add(v2);
-            vertices.Add(v3);
-            vertices.Add(v4);
-            uvs.Add(new Vector2(0, 0));
-            uvs.Add(new Vector2(1, 0));
-            uvs.Add(new Vector2(1, 1));
-            uvs.Add(new Vector2(0, 1));
-
-            // 翻转三角形顺序使法线朝外（从格子外部看）
-            // 原来顺时针改为逆时针，或反之
-            triangles.Add(index * 4);
-            triangles.Add(index * 4 + 1);
-            triangles.Add(index * 4 + 2);
-
-            triangles.Add(index * 4);
-            triangles.Add(index * 4 + 2);
-            triangles.Add(index * 4 + 3);
+            // 法线朝外：左墙面法线朝-x，右墙面法线朝+z
+            if (isLeft)
+            {
+                // 从-x看：v0(后上) -> v1(前上) -> v2(前下) -> v3(后下)，逆时针法线朝左
+                triList.Add(v0);
+                triList.Add(v1);
+                triList.Add(v2);
+                triList.Add(v0);
+                triList.Add(v2);
+                triList.Add(v3);
+            }
+            else
+            {
+                // 从+z看：v0(前下) -> v1(前上) -> v2(后上) -> v3(后下)，逆时针法线朝前
+                triList.Add(v0);
+                triList.Add(v1);
+                triList.Add(v2);
+                triList.Add(v0);
+                triList.Add(v2);
+                triList.Add(v3);
+            }
         }
 
 
