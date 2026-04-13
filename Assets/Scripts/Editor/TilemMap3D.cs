@@ -11,6 +11,16 @@ namespace Editor
         private static Vector2Int rightTop = new Vector2Int(6, 6);
 
 
+        private static void PreCreate()
+        {
+            var path = $"Assets/TileMap3D.asset";
+            var m = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (m != null)
+            {
+                AssetDatabase.DeleteAsset(path);
+            }
+        }
+
         [MenuItem("Map/创建网格")]
         private static void Create()
         {
