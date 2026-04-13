@@ -198,6 +198,12 @@ namespace Editor
 
         private static void CreateMesh()
         {
+            CreateSurfaceMesh();
+            CreateWallMesh();
+        }
+
+        private static void CreateSurfaceMesh()
+        {
             var path = $"Assets/RTSMap.asset";
             var mesh = new Mesh();
             var SIZE = tileVoDic.Count;
@@ -209,10 +215,10 @@ namespace Editor
             var index = 0; //第几个格子
             foreach (var tileVo in tileVoDic.Values)
             {
-                var layerIndex1 = CheckLowerTile(tileVo.x, tileVo.z);
-                var layerIndex2 = CheckLowerTile(tileVo.x - 1, tileVo.z);
-                var layerIndex3 = CheckLowerTile(tileVo.x - 1, tileVo.z - 1);
-                var layerIndex4 = CheckLowerTile(tileVo.x, tileVo.z - 1);
+                var layerIndex1 = GetDrawLayerIndex(tileVo.x, tileVo.z, tileVo.layerIndex);
+                var layerIndex2 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z, tileVo.layerIndex);
+                var layerIndex3 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z - 1, tileVo.layerIndex);
+                var layerIndex4 = GetDrawLayerIndex(tileVo.x, tileVo.z - 1, tileVo.layerIndex);
                 var v1 = PtToMap(tileVo.x, tileVo.z, layerIndex1 * LAYER_HEIGHT);
                 var v2 = PtToMap(tileVo.x - 1, tileVo.z, layerIndex2 * LAYER_HEIGHT);
                 var v3 = PtToMap(tileVo.x - 1, tileVo.z - 1, layerIndex3 * LAYER_HEIGHT);
@@ -291,6 +297,106 @@ namespace Editor
             render.sharedMaterial = new Material(Shader.Find("Standard"));
         }
 
+        private static void CreateWallMesh()
+        {
+            var path = $"Assets/RTSMap_Wall.asset";
+            var mesh = new Mesh();
+            var wallList = new List<Vector3>();
+            var wallTriangles = new List<int>();
+            var wallUvs = new List<Vector2>();
+
+            foreach (var tileVo in tileVoDic.Values)
+            {
+                // 左侧墙面 
+                if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z + 1), out var leftTileVo))
+                {
+                    CreateWallIfNeeded(tileVo, leftTileVo, true, ref wallList, ref wallUvs, ref wallTriangles);
+                }
+
+                // 右侧墙面 
+                if (tileVoDic.TryGetValue((tileVo.x + 1) + "_" + tileVo.z, out var rightTileVo))
+                {
+                    CreateWallIfNeeded(tileVo, rightTileVo, false, ref wallList, ref wallUvs, ref wallTriangles);
+                }
+            }
+
+            if (wallList.Count == 0) return;
+
+            mesh.vertices = wallList.ToArray();
+            mesh.triangles = wallTriangles.ToArray();
+            mesh.uv = wallUvs.ToArray();
+            mesh.RecalculateBounds();
+            mesh.RecalculateNormals();
+
+            var so = new SerializedObject(mesh);
+            var pro = so.FindProperty("m_IsReadable");
+            pro.boolValue = false;
+            so.ApplyModifiedProperties();
+            AssetDatabase.CreateAsset(mesh, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            var oldGo = GameObject.Find("RTSMap_Wall");
+            if (oldGo != null)
+            {
+                Object.DestroyImmediate(oldGo);
+            }
+
+            var go = new GameObject("RTSMap_Wall");
+            var filter = go.AddComponent<MeshFilter>();
+            filter.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            var render = go.AddComponent<MeshRenderer>();
+            render.sharedMaterial = new Material(Shader.Find("Standard"));
+        }
+
+        private static void CreateWallIfNeeded(TileVo vo1, TileVo vo2, bool isLeft, ref List<Vector3> vertices,
+            ref List<Vector2> uvs, ref List<int> triangles)
+        {
+            var indexGap = Mathf.Abs(vo1.layerIndex - vo2.layerIndex);
+            if (indexGap < 2)
+            {
+                return;
+            }
+
+            var topTileVo = vo1.layerIndex > vo2.layerIndex ? vo1 : vo2;
+            var bottomTileVo = vo1.layerIndex < vo2.layerIndex ? vo1 : vo2;
+
+            //左墙面
+            var v1 = PtToMap(topTileVo.x, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
+            var v2 = PtToMap(topTileVo.x - 1, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
+            var v3 = PtToMap(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
+            var v4 = PtToMap(topTileVo.x, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
+            //右墙面
+            if (isLeft == false)
+            {
+                v1 = PtToMap(topTileVo.x, topTileVo.z, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
+                v2 = PtToMap(topTileVo.x, topTileVo.z, topTileVo.layerIndex * LAYER_HEIGHT);
+                v3 = PtToMap(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex * LAYER_HEIGHT);
+                v4 = PtToMap(topTileVo.x, topTileVo.z - 1, (topTileVo.layerIndex - indexGap) * LAYER_HEIGHT);
+            }
+
+            var index = vertices.Count / 4; //第几个格子
+            vertices.Add(v1);
+            vertices.Add(v2);
+            vertices.Add(v3);
+            vertices.Add(v4);
+            uvs.Add(new Vector2(0, 0));
+            uvs.Add(new Vector2(1, 0));
+            uvs.Add(new Vector2(1, 1));
+            uvs.Add(new Vector2(0, 1));
+
+            // 翻转三角形顺序使法线朝外（从格子外部看）
+            // 原来顺时针改为逆时针，或反之
+            triangles.Add(index * 4);
+            triangles.Add(index * 4 + 1);
+            triangles.Add(index * 4 + 2);
+
+            triangles.Add(index * 4);
+            triangles.Add(index * 4 + 2);
+            triangles.Add(index * 4 + 3);
+        }
+
+
         private static readonly float HalfTileW = 0.5f;
         private static readonly float HalfTileH = 0.5f;
 
@@ -301,8 +407,19 @@ namespace Editor
             return new Vector3(x, y, -z);
         }
 
+        private static int GetDrawLayerIndex(int tx, int tz, int curIndex)
+        {
+            var maxIndex = GetMaxLayerIndex(tx, tz);
+            if (maxIndex - curIndex > 1)
+            {
+                return curIndex;
+            }
+
+            return maxIndex;
+        }
+
         //检查覆盖指定顶点的所有格子，返回最高的层级
-        private static int CheckLowerTile(int tx, int tz)
+        private static int GetMaxLayerIndex(int tx, int tz)
         {
             // 顶点位置被以下格子可能覆盖：
             // 格子(tx, tz)的右下角 v1
