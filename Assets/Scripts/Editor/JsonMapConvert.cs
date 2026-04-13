@@ -225,7 +225,7 @@ namespace Editor
                 uvs[index * 4 + 1] = new Vector2(1, 0);
                 uvs[index * 4 + 2] = new Vector2(1, 1);
                 uvs[index * 4 + 3] = new Vector2(0, 1);
-                
+
                 // 检查当前格子是否需要斜面（有相邻格子高度低于当前格子）
                 bool needsSlope = false;
                 if (tileVoDic.TryGetValue((tileVo.x - 1) + "_" + tileVo.z, out var leftTileVo))
@@ -233,12 +233,13 @@ namespace Editor
                     if (leftTileVo.layerIndex < tileVo.layerIndex)
                         needsSlope = true;
                 }
+
                 if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z - 1), out var downTileVo))
                 {
                     if (downTileVo.layerIndex < tileVo.layerIndex)
                         needsSlope = true;
                 }
-                
+
                 if (needsSlope)
                 {
                     // 斜面：两个三角形沿对角线 1-2 分割
@@ -276,6 +277,12 @@ namespace Editor
             AssetDatabase.CreateAsset(mesh, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
+            var oldGo = GameObject.Find("RTSMap");
+            if (oldGo != null)
+            {
+                Object.DestroyImmediate(oldGo);
+            }
 
             var go = new GameObject("RTSMap");
             var filter = go.AddComponent<MeshFilter>();
