@@ -310,12 +310,22 @@ namespace Editor
                 // 左侧墙面 
                 if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z + 1), out var leftTileVo))
                 {
+                    if (leftTileVo.layerIndex > tileVo.layerIndex)
+                    {
+                        continue; //这是右上侧的墙面
+                    }
+
                     CreateWallIfNeeded(tileVo, leftTileVo, true, ref wallList, ref wallUvs, ref wallTriangles);
                 }
 
                 // 右侧墙面 
                 if (tileVoDic.TryGetValue((tileVo.x + 1) + "_" + tileVo.z, out var rightTileVo))
                 {
+                    if (rightTileVo.layerIndex > tileVo.layerIndex)
+                    {
+                        continue; //这是左上侧的墙面
+                    }
+
                     CreateWallIfNeeded(tileVo, rightTileVo, false, ref wallList, ref wallUvs, ref wallTriangles);
                 }
             }
