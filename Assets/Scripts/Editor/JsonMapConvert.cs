@@ -219,18 +219,13 @@ namespace Editor
                 int v3 = GetOrCreateVertex(tileVo.x, tileVo.z - 1, layerIndex4, vertList, vertDic);
 
                 // 斜面判断
-                bool needsSlope = false;
-                if (tileVoDic.TryGetValue((tileVo.x - 1) + "_" + tileVo.z, out var leftTileVo))
-                {
-                    if (leftTileVo.layerIndex < tileVo.layerIndex)
-                        needsSlope = true;
-                }
+                bool needsSlope = layerIndex1 != layerIndex3;
 
-                if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z - 1), out var downTileVo))
-                {
-                    if (downTileVo.layerIndex < tileVo.layerIndex)
-                        needsSlope = true;
-                }
+                // if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z - 1), out var downTileVo))
+                // {
+                //     if (downTileVo.layerIndex < tileVo.layerIndex)
+                //         needsSlope = true;
+                // }
 
                 if (needsSlope)
                 {
@@ -299,15 +294,15 @@ namespace Editor
             pro.boolValue = false;
             so.ApplyModifiedProperties();
 
-            var path = $"Assets/RTSMap_Combined.asset";
+            var path = $"Assets/RTSMap.asset";
             AssetDatabase.CreateAsset(mesh, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            var oldGo = GameObject.Find("RTSMap_Combined");
+            var oldGo = GameObject.Find("RTSMap");
             if (oldGo != null) Object.DestroyImmediate(oldGo);
 
-            var go = new GameObject("RTSMap_Combined");
+            var go = new GameObject("RTSMap");
             var filter = go.AddComponent<MeshFilter>();
             filter.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             var render = go.AddComponent<MeshRenderer>();
@@ -341,7 +336,8 @@ namespace Editor
             if (isLeft)
             {
                 v0 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
-                v1 = GetOrCreateVertex(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
+                v1 = GetOrCreateVertex(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex - indexGap, vertList,
+                    vertDic);
                 v2 = GetOrCreateVertex(topTileVo.x - 1, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
                 v3 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
             }
@@ -350,7 +346,8 @@ namespace Editor
                 v0 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex - indexGap, vertList, vertDic);
                 v1 = GetOrCreateVertex(topTileVo.x, topTileVo.z, topTileVo.layerIndex, vertList, vertDic);
                 v2 = GetOrCreateVertex(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex, vertList, vertDic);
-                v3 = GetOrCreateVertex(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex - indexGap, vertList, vertDic);
+                v3 = GetOrCreateVertex(topTileVo.x, topTileVo.z - 1, topTileVo.layerIndex - indexGap, vertList,
+                    vertDic);
             }
 
             // 法线朝外：左墙面法线朝-x，右墙面法线朝+z
