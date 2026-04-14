@@ -21,7 +21,7 @@ namespace Editor
         // private static Dictionary<int, Dictionary<string, int>> tileDic; //全部格子，key是layer，key是x_z，value是格子gid
         private static Dictionary<string, TileVo> tileVoDic; //全部格子，key是layer，key是x_z，value是格子gid
 
-        [MenuItem("Assets/转换地图")]
+        [MenuItem("Assets/生成地图网格/整体生成")]
         public static void ConvertMapData()
         {
             // tileDic = new Dictionary<int, Dictionary<string, int>>();
@@ -36,6 +36,24 @@ namespace Editor
             // ParseTileSet(tileSets);
             ParseLayers(layers);
             CreateMesh();
+            Debug.Log(tileVoDic);
+        }
+
+        [MenuItem("Assets/生成地图网格/分块生成")]
+        public static void ConvertMapDataChunk()
+        {
+            // tileDic = new Dictionary<int, Dictionary<string, int>>();
+            tileVoDic = new Dictionary<string, TileVo>();
+            var arr = Selection.GetFiltered(typeof(System.Object), SelectionMode.Assets);
+            TextAsset mapData = (TextAsset)arr[0];
+            JsonData json = JsonMapper.ToObject(mapData.text);
+            int width = (int)json["width"];
+            int height = (int)json["height"];
+            var tileSets = json["tilesets"];
+            var layers = json["layers"];
+            // ParseTileSet(tileSets);
+            ParseLayers(layers);
+            CreateAllMesh();
             Debug.Log(tileVoDic);
         }
 
@@ -194,6 +212,142 @@ namespace Editor
                     tileVoDic.TryAdd(tileKey, tileVo);
                 }
             }
+        }
+
+        private static void CreateAllMesh()
+        {
+            var chunkDic = new Dictionary<string, List<TileVo>>();
+            foreach (var tileVo in tileVoDic.Values)
+            {
+                var chunkX = Mathf.FloorToInt(tileVo.x / 16.0f);
+                var chunkZ = Mathf.FloorToInt(tileVo.z / 16.0f);
+                var chunkKey = chunkX + "_" + chunkZ;
+                if (chunkDic.TryGetValue(chunkKey, out var list))
+                {
+                    list.Add(tileVo);
+                }
+                else
+                {
+                    chunkDic.TryAdd(chunkKey, new List<TileVo> { tileVo });
+                }
+            }
+
+            foreach (var chunk in chunkDic.Values)
+            {
+                CreateMeshByChunk(chunk);
+            }
+        }
+
+        private static void CreateMeshByChunk(List<TileVo> list)
+        {
+            var mesh = new Mesh();
+            var vertList = new List<Vector3>();
+            var triList = new List<int>();
+            var uvList = new List<Vector2>();
+            var vertDic = new Dictionary<string, int>(); // key: "x_z_y" -> vertIndex
+
+            // 生成表面
+            foreach (var tileVo in list)
+            {
+                var layerIndex1 = GetDrawLayerIndex(tileVo.x, tileVo.z, tileVo.layerIndex);
+                var layerIndex2 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z, tileVo.layerIndex);
+                var layerIndex3 = GetDrawLayerIndex(tileVo.x - 1, tileVo.z - 1, tileVo.layerIndex);
+                var layerIndex4 = GetDrawLayerIndex(tileVo.x, tileVo.z - 1, tileVo.layerIndex);
+
+                // 获取或创建4个顶点
+                int v0 = GetOrCreateVertex(tileVo.x, tileVo.z, layerIndex1, vertList, vertDic);
+                int v1 = GetOrCreateVertex(tileVo.x - 1, tileVo.z, layerIndex2, vertList, vertDic);
+                int v2 = GetOrCreateVertex(tileVo.x - 1, tileVo.z - 1, layerIndex3, vertList, vertDic);
+                int v3 = GetOrCreateVertex(tileVo.x, tileVo.z - 1, layerIndex4, vertList, vertDic);
+
+                // 斜面判断
+                bool needsSlope = layerIndex1 != layerIndex3;
+
+
+                if (needsSlope)
+                {
+                    // 斜面
+                    triList.Add(v0);
+                    triList.Add(v1);
+                    triList.Add(v2);
+                    triList.Add(v0);
+                    triList.Add(v2);
+                    triList.Add(v3);
+                }
+                else
+                {
+                    // 平面
+                    triList.Add(v0);
+                    triList.Add(v1);
+                    triList.Add(v3);
+                    triList.Add(v1);
+                    triList.Add(v2);
+                    triList.Add(v3);
+                }
+            }
+
+            // 生成墙面
+            foreach (var tileVo in list)
+            {
+                // 左侧墙面 
+                if (tileVoDic.TryGetValue(tileVo.x + "_" + (tileVo.z + 1), out var leftTileVo))
+                {
+                    if (leftTileVo.layerIndex > tileVo.layerIndex)
+                    {
+                        continue; //这是右上侧的墙面
+                    }
+
+                    if (leftTileVo.layerIndex < tileVo.layerIndex)
+                        AddWallTriangles(tileVo, leftTileVo, true, vertList, vertDic, triList);
+                }
+
+                // 右侧墙面 
+                if (tileVoDic.TryGetValue((tileVo.x + 1) + "_" + tileVo.z, out var rightTileVo))
+                {
+                    if (rightTileVo.layerIndex > tileVo.layerIndex)
+                    {
+                        continue; //这是左上侧的墙面
+                    }
+
+                    if (rightTileVo.layerIndex < tileVo.layerIndex)
+                        AddWallTriangles(tileVo, rightTileVo, false, vertList, vertDic, triList);
+                }
+            }
+
+            // 填充UV
+            for (int i = 0; i < vertList.Count; i++)
+            {
+                uvList.Add(new Vector2(0, 0));
+            }
+
+            mesh.vertices = vertList.ToArray();
+            mesh.triangles = triList.ToArray();
+            mesh.uv = uvList.ToArray();
+            mesh.RecalculateBounds();
+            mesh.RecalculateNormals();
+
+            var so = new SerializedObject(mesh);
+            var pro = so.FindProperty("m_IsReadable");
+            pro.boolValue = false;
+            so.ApplyModifiedProperties();
+
+            var chunkTile = list[0];
+            var chunkX = Mathf.FloorToInt(chunkTile.x / 16.0f);
+            var chunkZ = Mathf.FloorToInt(chunkTile.z / 16.0f);
+            var chunkKey = chunkX + "_" + chunkZ;
+            var path = $"Assets/{chunkKey}.asset";
+            AssetDatabase.CreateAsset(mesh, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            var oldGo = GameObject.Find($"{chunkKey}");
+            if (oldGo != null) Object.DestroyImmediate(oldGo);
+
+            var go = new GameObject($"{chunkKey}");
+            var filter = go.AddComponent<MeshFilter>();
+            filter.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            var render = go.AddComponent<MeshRenderer>();
+            render.sharedMaterial = new Material(Shader.Find("Standard"));
         }
 
         private static void CreateMesh()
